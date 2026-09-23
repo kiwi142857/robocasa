@@ -1,3 +1,4 @@
+import hashlib
 import unittest
 from unittest import mock
 
@@ -9,11 +10,85 @@ import robocasa
 import robosuite
 from robosuite.controllers import load_composite_controller_config
 from termcolor import colored
+from robocasa.environments.kitchen.kitchen import Kitchen
+from robocasa.environments.kitchen.composite.clearing_table.drinkware_consolidation import (
+    DrinkwareConsolidation,
+)
 
 DEFAULT_SEED = 3
 
 
 class TestEnvDeterminism(unittest.TestCase):
+    def test_overridden_reset_forwards_episode_seed(self):
+        env = object.__new__(DrinkwareConsolidation)
+        env.cab = mock.Mock()
+        with mock.patch.object(Kitchen, "reset", return_value={"obs": 1}) as reset:
+            self.assertEqual(env.reset(episode_seed=123), {"obs": 1})
+        reset.assert_called_once_with(episode_seed=123)
+        env.cab.open_door.assert_called_once_with(env=env)
+
+    def test_episode_seed_is_independent_of_previous_rollout(self):
+        """The same episode seed reproduces the scene after different rollouts."""
+        config = {
+            "env_name": "ArrangeDrinkware",
+            "robots": "PandaOmron",
+            "controller_configs": load_composite_controller_config(
+                controller=None, robot="PandaOmron"
+            ),
+            "has_renderer": False,
+            "has_offscreen_renderer": True,
+            "ignore_done": True,
+            "use_camera_obs": True,
+            "camera_names": "robot0_agentview_left",
+            "camera_heights": 64,
+            "camera_widths": 64,
+            "control_freq": 20,
+            "seed": 7,
+            "randomize_cameras": True,
+        }
+        env_a = robosuite.make(**config)
+        env_b = robosuite.make(**config)
+        try:
+            env_a.reset(episode_seed=101)
+            env_b.reset(episode_seed=101)
+            for _ in range(10):
+                env_b.step(np.zeros(env_b.action_dim))
+
+            obs_a = env_a.reset(episode_seed=102)
+            obs_b = env_b.reset(episode_seed=102)
+            self.assertEqual(
+                (env_a.layout_id, env_a.style_id),
+                (env_b.layout_id, env_b.style_id),
+            )
+            self.assertEqual(env_a._cam_configs, env_b._cam_configs)
+            self.assertEqual(
+                hashlib.sha256(env_a.model.get_xml().encode()).hexdigest(),
+                hashlib.sha256(env_b.model.get_xml().encode()).hexdigest(),
+            )
+            self.assertEqual(
+                env_a.object_placements.keys(), env_b.object_placements.keys()
+            )
+            self.assertEqual(env_a.fxtr_placements.keys(), env_b.fxtr_placements.keys())
+            for placements_a, placements_b in (
+                (env_a.object_placements, env_b.object_placements),
+                (env_a.fxtr_placements, env_b.fxtr_placements),
+            ):
+                for name in placements_a:
+                    np.testing.assert_array_equal(
+                        placements_a[name][0], placements_b[name][0]
+                    )
+                    np.testing.assert_array_equal(
+                        placements_a[name][1], placements_b[name][1]
+                    )
+            np.testing.assert_array_equal(env_a.sim.data.qpos, env_b.sim.data.qpos)
+            np.testing.assert_array_equal(env_a.sim.data.qvel, env_b.sim.data.qvel)
+            np.testing.assert_array_equal(
+                obs_a["robot0_agentview_left_image"],
+                obs_b["robot0_agentview_left_image"],
+            )
+        finally:
+            env_a.close()
+            env_b.close()
 
     skip_envs = set(
         [
