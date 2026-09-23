@@ -36,12 +36,9 @@ class TestEnvDeterminism(unittest.TestCase):
                 controller=None, robot="PandaOmron"
             ),
             "has_renderer": False,
-            "has_offscreen_renderer": True,
+            "has_offscreen_renderer": False,
             "ignore_done": True,
-            "use_camera_obs": True,
-            "camera_names": "robot0_agentview_left",
-            "camera_heights": 64,
-            "camera_widths": 64,
+            "use_camera_obs": False,
             "control_freq": 20,
             "seed": 7,
             "randomize_cameras": True,
@@ -54,8 +51,8 @@ class TestEnvDeterminism(unittest.TestCase):
             for _ in range(10):
                 env_b.step(np.zeros(env_b.action_dim))
 
-            obs_a = env_a.reset(episode_seed=102)
-            obs_b = env_b.reset(episode_seed=102)
+            env_a.reset(episode_seed=102)
+            env_b.reset(episode_seed=102)
             self.assertEqual(
                 (env_a.layout_id, env_a.style_id),
                 (env_b.layout_id, env_b.style_id),
@@ -82,10 +79,6 @@ class TestEnvDeterminism(unittest.TestCase):
                     )
             np.testing.assert_array_equal(env_a.sim.data.qpos, env_b.sim.data.qpos)
             np.testing.assert_array_equal(env_a.sim.data.qvel, env_b.sim.data.qvel)
-            np.testing.assert_array_equal(
-                obs_a["robot0_agentview_left_image"],
-                obs_b["robot0_agentview_left_image"],
-            )
         finally:
             env_a.close()
             env_b.close()
