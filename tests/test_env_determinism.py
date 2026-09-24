@@ -14,11 +14,27 @@ from robocasa.environments.kitchen.kitchen import Kitchen
 from robocasa.environments.kitchen.composite.clearing_table.drinkware_consolidation import (
     DrinkwareConsolidation,
 )
+from robocasa.wrappers.gym_wrapper import RoboCasaGymEnv
 
 DEFAULT_SEED = 3
 
 
 class TestEnvDeterminism(unittest.TestCase):
+    def test_gym_reset_forwards_explicit_episode_seed(self):
+        env = object.__new__(RoboCasaGymEnv)
+        env.env = mock.Mock()
+        env.env.reset.return_value = {"raw": 1}
+        env.get_observation = mock.Mock(return_value={"mapped": 1})
+        self.assertEqual(env.reset(options={"episode_seed": 123})[0], {"mapped": 1})
+        env.env.reset.assert_called_once_with(episode_seed=123)
+
+    def test_gym_reset_rejects_conflicting_seeds(self):
+        env = object.__new__(RoboCasaGymEnv)
+        env.env = mock.Mock()
+        with self.assertRaises(ValueError):
+            env.reset(seed=8, options={"episode_seed": 7})
+        env.env.reset.assert_not_called()
+
     def test_overridden_reset_forwards_episode_seed(self):
         env = object.__new__(DrinkwareConsolidation)
         env.cab = mock.Mock()
